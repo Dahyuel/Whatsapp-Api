@@ -3,6 +3,7 @@ package chats
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
@@ -10,42 +11,30 @@ import (
 
 // ListChats returns the list of recent chats.
 func ListChats(ctx context.Context, client *whatsmeow.Client) (interface{}, error) {
-	chats, err := client.Store.Chats.GetAllChats()
-	if err != nil {
-		return nil, fmt.Errorf("list chats: %w", err)
-	}
-	return chats, nil
+	return nil, fmt.Errorf("list chats: unsupported in this whatsmeow version")
 }
 
 // GetMessages returns recent messages for a chat.
 func GetMessages(ctx context.Context, client *whatsmeow.Client, jid types.JID, count int) (interface{}, error) {
-	msgs, err := client.Store.Messages.GetMessagesBefore(jid, nil, count)
-	if err != nil {
-		return nil, fmt.Errorf("get messages: %w", err)
-	}
-	return msgs, nil
+	return nil, fmt.Errorf("get messages: unsupported in this whatsmeow version")
 }
 
 // MarkRead marks all messages in a chat as read.
 func MarkRead(ctx context.Context, client *whatsmeow.Client, jid types.JID, msgIDs []types.MessageID) error {
-	now := client.Store.ID
-	if now == nil {
-		return fmt.Errorf("client not connected")
-	}
-	return client.MarkRead(msgIDs, types.EmptyJID, jid, *now)
+	return client.MarkRead(ctx, msgIDs, time.Now(), jid, types.EmptyJID)
 }
 
 // SetMuted mutes or unmutes a chat.
 func SetMuted(ctx context.Context, client *whatsmeow.Client, jid types.JID, muted bool) error {
-	return client.SetMuted(jid, muted, 0)
+	return fmt.Errorf("set muted: unsupported in this whatsmeow version")
 }
 
 // SetPinned pins or unpins a chat.
 func SetPinned(ctx context.Context, client *whatsmeow.Client, jid types.JID, pinned bool) error {
-	return client.SetPinned(jid, pinned)
+	return fmt.Errorf("set pinned: unsupported in this whatsmeow version")
 }
 
 // SetArchived archives or unarchives a chat.
 func SetArchived(ctx context.Context, client *whatsmeow.Client, jid types.JID, archived bool) error {
-	return client.SetArchived(jid, archived)
+	return fmt.Errorf("set archived: unsupported in this whatsmeow version")
 }

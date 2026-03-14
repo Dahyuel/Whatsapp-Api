@@ -29,7 +29,7 @@ func (t *TypingSimulator) Simulate(ctx context.Context, client *whatsmeow.Client
 		return
 	}
 	// Send composing presence
-	_ = client.SendChatPresence(jid, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+	_ = client.SendChatPresence(ctx, jid, types.ChatPresenceComposing, types.ChatPresenceMediaText)
 
 	// Calculate typing duration: chars / chars_per_second, capped at 8s
 	chars := float64(len(messageText))
@@ -48,7 +48,7 @@ func (t *TypingSimulator) Simulate(ctx context.Context, client *whatsmeow.Client
 	}
 
 	// Clear typing presence
-	_ = client.SendChatPresence(jid, types.ChatPresencePaused, types.ChatPresenceMediaText)
+	_ = client.SendChatPresence(ctx, jid, types.ChatPresencePaused, types.ChatPresenceMediaText)
 }
 
 // SimulateVoice simulates recording presence for voice notes.
@@ -56,7 +56,7 @@ func (t *TypingSimulator) SimulateVoice(ctx context.Context, client *whatsmeow.C
 	if !t.Enabled || client == nil {
 		return
 	}
-	_ = client.SendChatPresence(jid, types.ChatPresenceComposing, types.ChatPresenceMediaAudio)
+	_ = client.SendChatPresence(ctx, jid, types.ChatPresenceComposing, types.ChatPresenceMediaAudio)
 	simulatedDuration := durationSec * 0.5 // simulate half the note duration
 	if simulatedDuration > 6 {
 		simulatedDuration = 6
@@ -66,5 +66,5 @@ func (t *TypingSimulator) SimulateVoice(ctx context.Context, client *whatsmeow.C
 		return
 	case <-time.After(time.Duration(simulatedDuration * float64(time.Second))):
 	}
-	_ = client.SendChatPresence(jid, types.ChatPresencePaused, types.ChatPresenceMediaAudio)
+	_ = client.SendChatPresence(ctx, jid, types.ChatPresencePaused, types.ChatPresenceMediaAudio)
 }

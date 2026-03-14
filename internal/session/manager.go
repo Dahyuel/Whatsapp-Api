@@ -142,7 +142,7 @@ func (m *Manager) Logout(id string) error {
 	if sess.Client == nil {
 		return errors.New("client not initialized")
 	}
-	return sess.Client.Logout()
+	return sess.Client.Logout(context.Background())
 }
 
 // buildSession constructs a Session with isolated WhatsMeow client and queue.
@@ -153,12 +153,12 @@ func (m *Manager) buildSession(id string) (*Session, error) {
 		return nil, fmt.Errorf("create session dir: %w", err)
 	}
 
-	container, err := sqlstore.New("sqlite3", sessionDBPath+"?_foreign_keys=on", waLog.Noop)
+	container, err := sqlstore.New(context.Background(), "sqlite3", sessionDBPath+"?_foreign_keys=on", waLog.Noop)
 	if err != nil {
 		return nil, fmt.Errorf("create sqlstore: %w", err)
 	}
 
-	device, err := container.GetFirstDevice()
+	device, err := container.GetFirstDevice(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("get device: %w", err)
 	}

@@ -22,7 +22,7 @@ func Create(ctx context.Context, client *whatsmeow.Client, name string, particip
 		Name:         name,
 		Participants: jids,
 	}
-	info, err := client.CreateGroup(req)
+	info, err := client.CreateGroup(ctx, req)
 	if err != nil {
 		return "", fmt.Errorf("create group: %w", err)
 	}
@@ -31,7 +31,7 @@ func Create(ctx context.Context, client *whatsmeow.Client, name string, particip
 
 // GetInfo retrieves group metadata.
 func GetInfo(ctx context.Context, client *whatsmeow.Client, groupJID types.JID) (*types.GroupInfo, error) {
-	info, err := client.GetGroupInfo(groupJID)
+	info, err := client.GetGroupInfo(ctx, groupJID)
 	if err != nil {
 		return nil, fmt.Errorf("get group info: %w", err)
 	}
@@ -48,26 +48,26 @@ func UpdateParticipants(ctx context.Context, client *whatsmeow.Client, groupJID 
 		}
 		jids = append(jids, jid)
 	}
-	_, err := client.UpdateGroupParticipants(groupJID, jids, action)
+	_, err := client.UpdateGroupParticipants(ctx, groupJID, jids, action)
 	return err
 }
 
 // SetDescription updates a group's subject/description.
 func SetDescription(ctx context.Context, client *whatsmeow.Client, groupJID types.JID, description string) error {
-	return client.SetGroupTopic(groupJID, "", "", description)
+	return client.SetGroupTopic(ctx, groupJID, "", "", description)
 }
 
 // SetName updates a group's name.
 func SetName(ctx context.Context, client *whatsmeow.Client, groupJID types.JID, name string) error {
-	return client.SetGroupName(groupJID, name)
+	return client.SetGroupName(ctx, groupJID, name)
 }
 
 // Leave leaves a group.
 func Leave(ctx context.Context, client *whatsmeow.Client, groupJID types.JID) error {
-	return client.LeaveGroup(groupJID)
+	return client.LeaveGroup(ctx, groupJID)
 }
 
 // ListJoined returns all joined groups for the session.
 func ListJoined(ctx context.Context, client *whatsmeow.Client) ([]*types.GroupInfo, error) {
-	return client.GetJoinedGroups()
+	return client.GetJoinedGroups(ctx)
 }

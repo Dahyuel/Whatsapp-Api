@@ -1,6 +1,7 @@
 package antiban
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -38,7 +39,7 @@ func (p *PresenceManager) SetComposing(jid types.JID) {
 	if !p.enabled {
 		return
 	}
-	_ = p.client.SendChatPresence(jid, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+	_ = p.client.SendChatPresence(context.Background(), jid, types.ChatPresenceComposing, types.ChatPresenceMediaText)
 }
 
 // SetRecording marks the session as recording audio.
@@ -46,7 +47,7 @@ func (p *PresenceManager) SetRecording(jid types.JID) {
 	if !p.enabled {
 		return
 	}
-	_ = p.client.SendChatPresence(jid, types.ChatPresenceComposing, types.ChatPresenceMediaAudio)
+	_ = p.client.SendChatPresence(context.Background(), jid, types.ChatPresenceComposing, types.ChatPresenceMediaAudio)
 }
 
 // SetPaused marks the session as paused.
@@ -54,7 +55,7 @@ func (p *PresenceManager) SetPaused(jid types.JID) {
 	if !p.enabled {
 		return
 	}
-	_ = p.client.SendChatPresence(jid, types.ChatPresencePaused, types.ChatPresenceMediaText)
+	_ = p.client.SendChatPresence(context.Background(), jid, types.ChatPresencePaused, types.ChatPresenceMediaText)
 }
 
 // send is an internal throttled presence sender.

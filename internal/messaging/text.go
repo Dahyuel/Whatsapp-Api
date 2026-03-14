@@ -44,7 +44,7 @@ func BuildReplyMessage(text, quotedID, quotedJID, quotedText string) *waProto.Me
 		ExtendedTextMessage: &waProto.ExtendedTextMessage{
 			Text: proto.String(text),
 			ContextInfo: &waProto.ContextInfo{
-				StanzaId:      proto.String(quotedID),
+				StanzaID:      proto.String(quotedID),
 				Participant:   proto.String(quotedJID),
 				QuotedMessage: &waProto.Message{Conversation: proto.String(quotedText)},
 			},

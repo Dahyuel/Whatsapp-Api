@@ -6,13 +6,14 @@ import (
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
+	"go.mau.fi/whatsmeow/types/events"
 )
 
 // CheckExists verifies whether one or more phone numbers are registered on WhatsApp.
 func CheckExists(ctx context.Context, client *whatsmeow.Client, phones []string) (map[string]bool, error) {
 	result := make(map[string]bool)
 	for _, phone := range phones {
-		jids, err := client.IsOnWhatsApp([]string{phone})
+		jids, err := client.IsOnWhatsApp(ctx, []string{phone})
 		if err != nil {
 			return nil, fmt.Errorf("check number %s: %w", phone, err)
 		}
@@ -30,17 +31,16 @@ func GetContactInfo(ctx context.Context, client *whatsmeow.Client, jid types.JID
 	}
 
 	// Profile picture
-	pic, err := client.GetProfilePictureInfo(jid, &whatsmeow.GetProfilePictureParams{Preview: false})
+	pic, err := client.GetProfilePictureInfo(ctx, jid, &whatsmeow.GetProfilePictureParams{Preview: false})
 	if err == nil && pic != nil {
 		info["profile_picture_url"] = pic.URL
 	}
 
 	// User info (status)
-	userInfo, err := client.GetUserInfo([]types.JID{jid})
+	userInfo, err := client.GetUserInfo(ctx, []types.JID{jid})
 	if err == nil {
 		for _, u := range userInfo {
 			info["status"] = u.Status
-			info["status_at"] = u.StatusAt
 			info["verified"] = u.VerifiedName
 		}
 	}
@@ -50,7 +50,7 @@ func GetContactInfo(ctx context.Context, client *whatsmeow.Client, jid types.JID
 
 // GetContacts returns all stored contacts.
 func GetContacts(ctx context.Context, client *whatsmeow.Client) (interface{}, error) {
-	contacts, err := client.Store.Contacts.GetAllContacts()
+	contacts, err := client.Store.Contacts.GetAllContacts(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get contacts: %w", err)
 	}
@@ -59,17 +59,19 @@ func GetContacts(ctx context.Context, client *whatsmeow.Client) (interface{}, er
 
 // BlockContact blocks a contact.
 func BlockContact(ctx context.Context, client *whatsmeow.Client, jid types.JID) error {
-	return client.UpdateBlocklist(jid, whatsmeow.BlocklistChangeActionBlock)
+	_, err := client.UpdateBlocklist(ctx, jid, events.BlocklistChangeActionBlock)
+	return err
 }
 
 // UnblockContact unblocks a contact.
 func UnblockContact(ctx context.Context, client *whatsmeow.Client, jid types.JID) error {
-	return client.UpdateBlocklist(jid, whatsmeow.BlocklistChangeActionUnblock)
+	_, err := client.UpdateBlocklist(ctx, jid, events.BlocklistChangeActionUnblock)
+	return err
 }
 
 // GetProfilePhoto returns the profile picture URL for a JID.
 func GetProfilePhoto(ctx context.Context, client *whatsmeow.Client, jid types.JID) (string, error) {
-	pic, err := client.GetProfilePictureInfo(jid, &whatsmeow.GetProfilePictureParams{Preview: false})
+	pic, err := client.GetProfilePictureInfo(ctx, jid, &whatsmeow.GetProfilePictureParams{Preview: false})
 	if err != nil {
 		return "", fmt.Errorf("get profile picture: %w", err)
 	}

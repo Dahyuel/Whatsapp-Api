@@ -52,12 +52,12 @@ func UploadAndBuildMedia(ctx context.Context, client *whatsmeow.Client, data []b
 	case MediaImage:
 		return &waProto.Message{
 			ImageMessage: &waProto.ImageMessage{
-				Url:           proto.String(uploaded.URL),
+				URL:           proto.String(uploaded.URL),
 				DirectPath:    proto.String(uploaded.DirectPath),
 				MediaKey:      uploaded.MediaKey,
 				Mimetype:      proto.String(mimeType),
-				FileEncSha256: uploaded.FileEncSHA256,
-				FileSha256:    uploaded.FileSHA256,
+				FileEncSHA256: uploaded.FileEncSHA256,
+				FileSHA256:    uploaded.FileSHA256,
 				FileLength:    proto.Uint64(uint64(len(data))),
 				Caption:       proto.String(caption),
 			},
@@ -66,12 +66,12 @@ func UploadAndBuildMedia(ctx context.Context, client *whatsmeow.Client, data []b
 	case MediaVideo:
 		return &waProto.Message{
 			VideoMessage: &waProto.VideoMessage{
-				Url:           proto.String(uploaded.URL),
+				URL:           proto.String(uploaded.URL),
 				DirectPath:    proto.String(uploaded.DirectPath),
 				MediaKey:      uploaded.MediaKey,
 				Mimetype:      proto.String(mimeType),
-				FileEncSha256: uploaded.FileEncSHA256,
-				FileSha256:    uploaded.FileSHA256,
+				FileEncSHA256: uploaded.FileEncSHA256,
+				FileSHA256:    uploaded.FileSHA256,
 				FileLength:    proto.Uint64(uint64(len(data))),
 				Caption:       proto.String(caption),
 			},
@@ -80,26 +80,26 @@ func UploadAndBuildMedia(ctx context.Context, client *whatsmeow.Client, data []b
 	case MediaAudio:
 		return &waProto.Message{
 			AudioMessage: &waProto.AudioMessage{
-				Url:           proto.String(uploaded.URL),
+				URL:           proto.String(uploaded.URL),
 				DirectPath:    proto.String(uploaded.DirectPath),
 				MediaKey:      uploaded.MediaKey,
 				Mimetype:      proto.String(mimeType),
-				FileEncSha256: uploaded.FileEncSHA256,
-				FileSha256:    uploaded.FileSHA256,
+				FileEncSHA256: uploaded.FileEncSHA256,
+				FileSHA256:    uploaded.FileSHA256,
 				FileLength:    proto.Uint64(uint64(len(data))),
-				Ptt:           proto.Bool(mimeType == "audio/ogg; codecs=opus"),
+				PTT:           proto.Bool(mimeType == "audio/ogg; codecs=opus"),
 			},
 		}, nil
 
 	case MediaSticker:
 		return &waProto.Message{
 			StickerMessage: &waProto.StickerMessage{
-				Url:           proto.String(uploaded.URL),
+				URL:           proto.String(uploaded.URL),
 				DirectPath:    proto.String(uploaded.DirectPath),
 				MediaKey:      uploaded.MediaKey,
 				Mimetype:      proto.String(mimeType),
-				FileEncSha256: uploaded.FileEncSHA256,
-				FileSha256:    uploaded.FileSHA256,
+				FileEncSHA256: uploaded.FileEncSHA256,
+				FileSHA256:    uploaded.FileSHA256,
 				FileLength:    proto.Uint64(uint64(len(data))),
 			},
 		}, nil
@@ -107,12 +107,12 @@ func UploadAndBuildMedia(ctx context.Context, client *whatsmeow.Client, data []b
 	default: // Document
 		return &waProto.Message{
 			DocumentMessage: &waProto.DocumentMessage{
-				Url:           proto.String(uploaded.URL),
+				URL:           proto.String(uploaded.URL),
 				DirectPath:    proto.String(uploaded.DirectPath),
 				MediaKey:      uploaded.MediaKey,
 				Mimetype:      proto.String(mimeType),
-				FileEncSha256: uploaded.FileEncSHA256,
-				FileSha256:    uploaded.FileSHA256,
+				FileEncSHA256: uploaded.FileEncSHA256,
+				FileSHA256:    uploaded.FileSHA256,
 				FileLength:    proto.Uint64(uint64(len(data))),
 				FileName:      proto.String(filename),
 				Caption:       proto.String(caption),

@@ -24,6 +24,7 @@ A production-ready WhatsApp API server built with **Go** and **WhatsMeow**. No b
 | **Security** | API Key required, optional JWT, rate limiting (60 req/min) |
 | **Observability** | Structured logs (zerolog), Prometheus metrics at `/metrics` |
 | **Persistence** | SQLite (default), all sessions auto-reconnect on restart |
+| **GUI Dashboard** | Premium React + Vite frontend to manage sessions, webhooks, and test messaging |
 
 ---
 
@@ -48,6 +49,24 @@ Verify it's running:
 ```bash
 curl http://localhost:3000/health
 ```
+
+### 3. Run the GUI Dashboard (Optional)
+
+The project includes a sleek, modern React frontend to easily manage your API visually.
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The GUI will start on `http://localhost:5173`.
+Open it in your browser, enter your `API_KEY`, and you can:
+
+- **Manage Sessions:** Generate QR codes, connect devices, and disconnect.
+- **Messaging:** Send text and media using the built-in anti-ban queue.
+- **Webhooks:** Register and monitor webhook endpoints.
+- **API Tester:** Dispatch custom JSON payloads to any server endpoint.
 
 ---
 
@@ -313,7 +332,15 @@ whatsapp-api/
 │   └── api/                        # Gin router + all HTTP handlers
 ├── Dockerfile
 ├── docker-compose.yml
-└── .env.example
+├── .env.example
+└── frontend/                   # Modern React + Vite Dashboard
+    ├── src/
+    │   ├── api.js              # Centralized API fetcher
+    │   ├── App.jsx             # Main layout and routing
+    │   ├── index.css           # Premium vanilla CSS styling
+    │   └── components/         # GUI Components (Sessions, Messaging, Webhooks, Tester)
+    ├── package.json
+    └── vite.config.js
 ```
 
 ---

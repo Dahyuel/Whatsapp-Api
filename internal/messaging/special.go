@@ -37,12 +37,12 @@ func BuildReactionMessage(targetMsgID, targetSenderJID, reaction string) *waProt
 	return &waProto.Message{
 		ReactionMessage: &waProto.ReactionMessage{
 			Key: &waProto.MessageKey{
-				Id:          proto.String(targetMsgID),
+				ID:          proto.String(targetMsgID),
 				FromMe:      proto.Bool(false),
-				RemoteJid:   proto.String(targetSenderJID),
+				RemoteJID:   proto.String(targetSenderJID),
 			},
 			Text:              proto.String(reaction),
-			SenderTimestampMs: proto.Int64(0),
+			SenderTimestampMS: proto.Int64(0),
 		},
 	}
 }
@@ -66,12 +66,8 @@ func BuildPollMessage(question string, options []string, selectableCount uint32)
 
 // DeleteMessage revokes/deletes a sent message.
 func DeleteMessage(ctx context.Context, client *whatsmeow.Client, chatJID types.JID, msgID string, fromMe bool) error {
-	key := types.MessageKey{
-		ID:     msgID,
-		FromMe: fromMe,
-		Chat:   chatJID,
-	}
-	_, err := client.RevokeMessage(ctx, chatJID, key)
+	buildRevoke := client.BuildRevoke(chatJID, types.EmptyJID, msgID)
+	_, err := client.SendMessage(ctx, chatJID, buildRevoke)
 	if err != nil {
 		return fmt.Errorf("delete message: %w", err)
 	}

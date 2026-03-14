@@ -12,7 +12,7 @@ import (
 
 // GetInfo returns metadata for a newsletter (channel) JID.
 func GetInfo(ctx context.Context, client *whatsmeow.Client, jid types.JID) (*types.NewsletterMetadata, error) {
-	info, err := client.GetNewsletterInfo(jid)
+	info, err := client.GetNewsletterInfo(ctx, jid)
 	if err != nil {
 		return nil, fmt.Errorf("get channel info: %w", err)
 	}
@@ -21,7 +21,7 @@ func GetInfo(ctx context.Context, client *whatsmeow.Client, jid types.JID) (*typ
 
 // List returns all channels the bot has joined.
 func List(ctx context.Context, client *whatsmeow.Client) ([]*types.NewsletterMetadata, error) {
-	return client.GetSubscribedNewsletters()
+	return client.GetSubscribedNewsletters(ctx)
 }
 
 // SendText sends a text message to a channel.

@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  whatsapp-api:
+    build: .
+    image: whatsapp-api:latest
+    container_name: whatsapp-api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - whatsapp_data:/app/data
+    environment:
+      - PORT=3000
+      - API_KEY=${API_KEY:-changeme}
+      - DB_DRIVER=sqlite
+      - DB_DSN=/app/data/whatsapp.db
+      - QUEUE_BASE_DELAY=${QUEUE_BASE_DELAY:-4s}
+      - QUEUE_JITTER_MIN=${QUEUE_JITTER_MIN:-1s}
+      - QUEUE_JITTER_MAX=${QUEUE_JITTER_MAX:-3s}
+      - MAX_MESSAGES_PER_MINUTE=${MAX_MESSAGES_PER_MINUTE:-20}
+      - TYPING_ENABLED=${TYPING_ENABLED:-true}
+      - PRESENCE_ENABLED=${PRESENCE_ENABLED:-true}
+      - TYPING_CHARS_PER_SECOND=${TYPING_CHARS_PER_SECOND:-12}
+      - WEBHOOK_TIMEOUT=${WEBHOOK_TIMEOUT:-10s}
+      - WEBHOOK_MAX_RETRIES=${WEBHOOK_MAX_RETRIES:-5}
+      - MEDIA_STORAGE_PATH=/app/data/media
+      - JWT_ENABLED=${JWT_ENABLED:-false}
+      - JWT_SECRET=${JWT_SECRET:-changeme-jwt-secret}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  whatsapp_data:
+    driver: local

@@ -52,16 +52,10 @@ curl http://localhost:3000/health
 
 ### 3. Run the GUI Dashboard (Optional)
 
-The project includes a sleek, modern React frontend to easily manage your API visually.
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
+Since the frontend is now bundled in `docker-compose.yml`, it will automatically start alongside the backend when you run `docker compose up -d`.
 
 The GUI will start on `http://localhost:5173`.
-Open it in your browser, enter your `API_KEY`, and you can:
+Open it in your browser, enter your `API_KEY` (as configured in `.env`), and you can:
 
 - **Manage Sessions:** Generate QR codes, connect devices, and disconnect.
 - **Messaging:** Send text and media using the built-in anti-ban queue.

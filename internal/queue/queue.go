@@ -10,6 +10,7 @@ import (
 
 	"whatsapp-api/internal/antiban"
 	"whatsapp-api/internal/db"
+	"whatsapp-api/internal/fingerprint"
 
 	"github.com/rs/zerolog/log"
 	"go.mau.fi/whatsmeow"
@@ -165,6 +166,8 @@ func (q *Queue) processJob(job *MessageJob) {
 	q.typeSim.Simulate(ctx, client, job.JID, job.Text)
 
 	_ = db.UpdateMessageStatus(q.db, job.TrackingID, "sending", "")
+
+	fingerprint.SimulateNetworkDelay()
 
 	resp, err := client.SendMessage(ctx, job.JID, job.Message)
 	if err != nil {

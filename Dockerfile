@@ -15,7 +15,8 @@ RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o /whatsapp-api ./cmd/se
 # ── Runtime Stage ────────────────────────────────────────────────
 FROM alpine:3.19
 
-RUN apk add --no-cache ca-certificates tzdata sqlite
+# Add sqlite so the binary can load the sqlite driver
+RUN apk add --no-cache ca-certificates tzdata sqlite sqlite-dev
 
 WORKDIR /app
 

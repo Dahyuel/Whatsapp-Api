@@ -9,6 +9,7 @@ import (
 	"whatsapp-api/internal/session"
 	"whatsapp-api/internal/webhook"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/ulule/limiter/v3"
 	mgin "github.com/ulule/limiter/v3/drivers/middleware/gin"
@@ -22,6 +23,16 @@ func NewRouter(cfg *config.Config, db *sql.DB, mgr *session.Manager, dispatcher 
 	}
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
+
+	// CORS initialization
+	r.Use(cors.New(cors.Config{
+		AllowOriginFunc:  func(origin string) bool { return true },
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"},
+		AllowHeaders:     []string{"Origin", "Content-Length", "Content-Type", "X-API-Key", "Authorization", "X-WhatsApp-Signature", "Accept"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
 
 	// Rate limiter: max 60 req/min per IP
 	rate := limiter.Rate{Period: time.Minute, Limit: 60}

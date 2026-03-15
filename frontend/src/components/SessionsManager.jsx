@@ -70,7 +70,7 @@ export default function SessionsManager() {
 
   if (loading) return <div className="animate-fade-in"><p>Loading sessions...</p></div>;
 
-  const sessions = data?.data || [];
+  const sessions = data?.sessions || [];
 
   return (
     <div className="animate-fade-in">

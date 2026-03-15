@@ -5,7 +5,7 @@ import { Send, Image, MessageSquare, MapPin } from 'lucide-react';
 
 export default function Messaging() {
   const { data: sessionData } = useApi('/sessions');
-  const sessions = sessionData?.data || [];
+  const sessions = sessionData?.sessions || [];
   
   const [activeTab, setActiveTab] = useState('text');
   const [loading, setLoading] = useState(false);

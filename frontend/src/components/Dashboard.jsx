@@ -34,12 +34,12 @@ export default function Dashboard() {
     );
   }
 
-  const activeSessions = sessions?.data?.filter(s => s.status === 'CONNECTED')?.length || 0;
-  const totalSessions = sessions?.data?.length || 0;
+  const activeSessions = sessions?.sessions?.filter(s => s.status === 'CONNECTED')?.length || 0;
+  const totalSessions = sessions?.sessions?.length || 0;
   
-  // Assuming queue endpoint returns an array or an object we can reduce
-  const totalQueuedMessages = Array.isArray(queue?.data) 
-    ? queue.data.reduce((acc, q) => acc + (q.pending || 0), 0)
+  // Assuming queue endpoint returns {"queues": [...]}
+  const totalQueuedMessages = Array.isArray(queue?.queues) 
+    ? queue.queues.reduce((acc, q) => acc + (q.pending || 0), 0)
     : 0;
 
   return (

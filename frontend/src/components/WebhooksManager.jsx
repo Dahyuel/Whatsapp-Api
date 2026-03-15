@@ -81,7 +81,7 @@ export default function WebhooksManager() {
                 onChange={e => setFormData({ ...formData, session_id: e.target.value })}
               >
                 <option value="">Select Session...</option>
-                {(sessionData?.data || []).map(s => (
+                {(sessionData?.sessions || []).map(s => (
                   <option key={s.id} value={s.id}>{s.id}</option>
                 ))}
               </select>

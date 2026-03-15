@@ -2,21 +2,24 @@ package chats
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
+
+	"whatsapp-api/internal/db"
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
 )
 
 // ListChats returns the list of recent chats.
-func ListChats(ctx context.Context, client *whatsmeow.Client) (interface{}, error) {
-	return nil, fmt.Errorf("list chats: unsupported in this whatsmeow version")
+func ListChats(ctx context.Context, database *sql.DB, sessionID string) ([]*db.ChatRow, error) {
+	return db.ListChats(database, sessionID)
 }
 
 // GetMessages returns recent messages for a chat.
-func GetMessages(ctx context.Context, client *whatsmeow.Client, jid types.JID, count int) (interface{}, error) {
-	return nil, fmt.Errorf("get messages: unsupported in this whatsmeow version")
+func GetMessages(ctx context.Context, database *sql.DB, sessionID string, jid types.JID, count int) ([]*db.ChatMessageRow, error) {
+	return db.GetChatMessages(database, sessionID, jid.String(), count)
 }
 
 // MarkRead marks all messages in a chat as read.

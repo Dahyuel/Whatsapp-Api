@@ -242,6 +242,7 @@ type AgentChatRow struct {
 	AgentID    string
 	SessionID  string
 	JID        string
+	Name       string // Added to join from chats
 	AssignedAt time.Time
 }
 
@@ -267,9 +268,15 @@ func UnassignChatByJID(db *sql.DB, agentID, sessionID, jid string) error {
 	return err
 }
 
-// GetChatsForAgent returns all chat assignments for an agent.
+// GetChatsForAgent returns all chat assignments for an agent along with chat names.
 func GetChatsForAgent(db *sql.DB, agentID string) ([]*AgentChatRow, error) {
-	rows, err := db.Query(`SELECT id, agent_id, session_id, jid, assigned_at FROM agent_chats WHERE agent_id=? ORDER BY assigned_at`, agentID)
+	rows, err := db.Query(`
+		SELECT a.id, a.agent_id, a.session_id, a.jid, a.assigned_at, COALESCE(c.name, '')
+		FROM agent_chats a
+		LEFT JOIN chats c ON a.session_id = c.session_id AND a.jid = c.jid
+		WHERE a.agent_id=? 
+		ORDER BY a.assigned_at
+	`, agentID)
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +284,7 @@ func GetChatsForAgent(db *sql.DB, agentID string) ([]*AgentChatRow, error) {
 	var chats []*AgentChatRow
 	for rows.Next() {
 		ac := &AgentChatRow{}
-		if err := rows.Scan(&ac.ID, &ac.AgentID, &ac.SessionID, &ac.JID, &ac.AssignedAt); err != nil {
+		if err := rows.Scan(&ac.ID, &ac.AgentID, &ac.SessionID, &ac.JID, &ac.AssignedAt, &ac.Name); err != nil {
 			return nil, err
 		}
 		chats = append(chats, ac)
@@ -305,5 +312,128 @@ func GetRandomAgent(db *sql.DB) (*UserRow, error) {
 		return nil, err
 	}
 	return u, nil
+}
+
+// ── Chat & Message History ─────────────────────────────────────────────────
+
+// ChatRow represents a conversation.
+type ChatRow struct {
+	SessionID       string
+	JID             string
+	Name            string
+	UnreadCount     int
+	LastMessageTime time.Time
+}
+
+// UpsertChat creates or updates a chat conversation record.
+func UpsertChat(db *sql.DB, sessionID, jid, name string, unreadInc int, lastMsgTime time.Time) error {
+	_, err := db.Exec(`
+		INSERT INTO chats (session_id, jid, name, unread_count, last_message_time)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(session_id, jid) DO UPDATE SET
+			name = CASE WHEN excluded.name != '' AND chats.name = '' THEN excluded.name ELSE chats.name END,
+			unread_count = chats.unread_count + excluded.unread_count,
+			last_message_time = CASE WHEN excluded.last_message_time > chats.last_message_time THEN excluded.last_message_time ELSE chats.last_message_time END
+	`, sessionID, jid, name, unreadInc, lastMsgTime)
+	return err
+}
+
+// ListChats returns all chats for a given session.
+func ListChats(db *sql.DB, sessionID string) ([]*ChatRow, error) {
+	rows, err := db.Query(`SELECT session_id, jid, name, unread_count, last_message_time FROM chats WHERE session_id=? ORDER BY last_message_time DESC`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var chats []*ChatRow
+	for rows.Next() {
+		c := &ChatRow{}
+		if err := rows.Scan(&c.SessionID, &c.JID, &c.Name, &c.UnreadCount, &c.LastMessageTime); err != nil {
+			return nil, err
+		}
+		chats = append(chats, c)
+	}
+	return chats, nil
+}
+
+// MarkChatRead resets the unread count for a chat.
+func MarkChatRead(db *sql.DB, sessionID, jid string) error {
+	_, err := db.Exec(`UPDATE chats SET unread_count=0 WHERE session_id=? AND jid=?`, sessionID, jid)
+	return err
+}
+
+// ChatMessageRow represents a single message in a chat history.
+type ChatMessageRow struct {
+	ID         int
+	SessionID  string
+	ChatJID    string
+	SenderJID  string
+	MessageID  string
+	IsFromMe   bool
+	Text       string
+	MsgType    string
+	Status     string
+	Timestamp  time.Time
+	RawMessage []byte
+}
+
+// InsertChatMessage stores an incoming or synced message.
+func InsertChatMessage(db *sql.DB, sessionID, chatJID, senderJID, messageID string, isFromMe bool, text, msgType, status string, timestamp time.Time, rawMessage []byte) error {
+	isFromMeInt := 0
+	if isFromMe {
+		isFromMeInt = 1
+	}
+	_, err := db.Exec(`
+		INSERT INTO chat_messages (session_id, chat_jid, sender_jid, message_id, is_from_me, text, msg_type, status, timestamp, raw_message)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(session_id, chat_jid, message_id) DO NOTHING
+	`, sessionID, chatJID, senderJID, messageID, isFromMeInt, text, msgType, status, timestamp, rawMessage)
+	return err
+}
+
+// GetChatMessages retrieves the recent messages for a chat.
+// GetChatMessages retrieves the recent messages for a chat.
+func GetChatMessages(db *sql.DB, sessionID, chatJID string, limit int) ([]*ChatMessageRow, error) {
+	rows, err := db.Query(`
+		SELECT id, session_id, chat_jid, sender_jid, message_id, is_from_me, text, msg_type, status, timestamp, raw_message
+		FROM chat_messages
+		WHERE session_id=? AND chat_jid=?
+		ORDER BY timestamp DESC
+		LIMIT ?
+	`, sessionID, chatJID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var msgs []*ChatMessageRow
+	for rows.Next() {
+		m := &ChatMessageRow{}
+		var isFromMeInt int
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.ChatJID, &m.SenderJID, &m.MessageID, &isFromMeInt, &m.Text, &m.MsgType, &m.Status, &m.Timestamp, &m.RawMessage); err != nil {
+			return nil, err
+		}
+		m.IsFromMe = isFromMeInt == 1
+		msgs = append(msgs, m)
+	}
+	
+	// Reverse to return in chronological order (oldest first, which UIs typically expect)
+	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
+		msgs[i], msgs[j] = msgs[j], msgs[i]
+	}
+	
+	return msgs, nil
+}
+
+// GetRawMessage retrieves the raw serialized protobuf bytes for a specific message.
+func GetRawMessage(db *sql.DB, sessionID, msgID string) ([]byte, error) {
+	var raw []byte
+	err := db.QueryRow(`SELECT raw_message FROM chat_messages WHERE session_id=? AND message_id=?`, sessionID, msgID).Scan(&raw)
+	return raw, err
+}
+
+// UpdateChatMessageStatus updates the delivery status of a message.
+func UpdateChatMessageStatus(db *sql.DB, sessionID, msgID, status string) error {
+	_, err := db.Exec(`UPDATE chat_messages SET status=? WHERE session_id=? AND message_id=?`, status, sessionID, msgID)
+	return err
 }
 

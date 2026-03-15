@@ -1,10 +1,12 @@
 package api
 
 import (
+	"database/sql"
 	"net/http"
 	"strconv"
 
 	"whatsapp-api/internal/chats"
+	"whatsapp-api/internal/db"
 	"whatsapp-api/internal/session"
 
 	"github.com/gin-gonic/gin"
@@ -12,15 +14,10 @@ import (
 )
 
 // RegisterChatRoutes registers /chats endpoints.
-func RegisterChatRoutes(r gin.IRouter, mgr *session.Manager) {
+func RegisterChatRoutes(r gin.IRouter, mgr *session.Manager, database *sql.DB) {
 	r.GET("/chats", func(c *gin.Context) {
 		sessID := c.Query("session")
-		sess, err := mgr.Get(sessID)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-			return
-		}
-		result, err := chats.ListChats(c.Request.Context(), sess.Client)
+		result, err := chats.ListChats(c.Request.Context(), database, sessID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -32,17 +29,12 @@ func RegisterChatRoutes(r gin.IRouter, mgr *session.Manager) {
 		sessID := c.Query("session")
 		countStr := c.DefaultQuery("count", "50")
 		count, _ := strconv.Atoi(countStr)
-		sess, err := mgr.Get(sessID)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-			return
-		}
 		jid, err := types.ParseJID(c.Param("jid"))
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JID"})
 			return
 		}
-		msgs, err := chats.GetMessages(c.Request.Context(), sess.Client, jid, count)
+		msgs, err := chats.GetMessages(c.Request.Context(), database, sessID, jid, count)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -74,6 +66,7 @@ func RegisterChatRoutes(r gin.IRouter, mgr *session.Manager) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		_ = db.MarkChatRead(database, sessID, jid.String())
 		c.JSON(http.StatusOK, gin.H{"status": "marked_read"})
 	})
 

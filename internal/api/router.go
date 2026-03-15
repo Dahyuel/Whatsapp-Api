@@ -34,8 +34,8 @@ func NewRouter(cfg *config.Config, database *sql.DB, mgr *session.Manager, dispa
 		MaxAge:           12 * time.Hour,
 	}))
 
-	// Rate limiter: max 60 req/min per IP
-	rate := limiter.Rate{Period: time.Minute, Limit: 60}
+	// Rate limiter: max 600 req/min per IP
+	rate := limiter.Rate{Period: time.Minute, Limit: 600}
 	store := memory.NewStore()
 	lmt := limiter.New(store, rate)
 	r.Use(mgin.NewMiddleware(lmt))
@@ -55,7 +55,7 @@ func NewRouter(cfg *config.Config, database *sql.DB, mgr *session.Manager, dispa
 	RegisterSessionRoutes(authed, mgr, dispatcher)
 	RegisterMessageRoutes(authed, mgr)
 	RegisterQueueRoutes(authed, mgr)
-	RegisterChatRoutes(authed, mgr)
+	RegisterChatRoutes(authed, mgr, database)
 	RegisterGroupRoutes(authed, mgr)
 	RegisterContactRoutes(authed, mgr)
 	RegisterWebhookRoutes(authed, mgr, dispatcher)

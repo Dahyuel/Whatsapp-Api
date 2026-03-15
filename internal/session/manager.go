@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"whatsapp-api/internal/antiban"
 	"whatsapp-api/internal/chats"
@@ -24,6 +25,7 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
+	"google.golang.org/protobuf/proto"
 )
 
 // SSEPublisher is a minimal interface so the session package does not
@@ -231,16 +233,128 @@ func (m *Manager) makeEventHandler(sess *Session) func(interface{}) {
 			_ = db.UpsertSession(m.db, sess.ID, string(StatusLoggedOut), "")
 			log.Warn().Str("session", sess.ID).Msg("session logged out")
 
+		case *events.HistorySync:
+			log.Info().Str("session", sess.ID).Str("type", string(v.Data.GetSyncType())).Msg("history sync received")
+			for _, conv := range v.Data.GetConversations() {
+				chatJID := conv.GetID()
+				name := conv.GetName()
+				if name == "" {
+					name = chatJID
+				}
+				unreadCount := int(conv.GetUnreadCount())
+				// We don't have the last message time directly here, but we will sort it out below
+				lastMsgTime := time.Unix(0, 0)
+				
+				for _, msgInfo := range conv.GetMessages() {
+					msgWrapper := msgInfo.GetMessage()
+					if msgWrapper == nil {
+						continue
+					}
+					
+					// msgWrapper is a *waWeb.WebMessageInfo
+					key := msgWrapper.GetKey()
+					msgID := key.GetID()
+					isFromMe := key.GetFromMe()
+					senderJID := chatJID
+					if key.GetParticipant() != "" {
+						senderJID = key.GetParticipant()
+					} else if isFromMe {
+						senderJID = sess.JID // me
+					}
+
+					realMsg := msgWrapper.GetMessage()
+					text := realMsg.GetConversation()
+					if text == "" && realMsg.GetExtendedTextMessage() != nil {
+						text = realMsg.GetExtendedTextMessage().GetText()
+					}
+					msgType := "text"
+					if realMsg.GetImageMessage() != nil {
+						msgType = "image"
+					} else if realMsg.GetVideoMessage() != nil {
+						msgType = "video"
+					} else if realMsg.GetDocumentMessage() != nil {
+						msgType = "document"
+					} else if realMsg.GetAudioMessage() != nil {
+						msgType = "audio"
+					}
+
+					timestamp := time.Unix(int64(msgWrapper.GetMessageTimestamp()), 0)
+					if timestamp.After(lastMsgTime) {
+						lastMsgTime = timestamp
+					}
+
+					status := ""
+					if isFromMe {
+						status = "SERVER_ACK"
+					}
+
+					rawBytes, _ := proto.Marshal(msgWrapper)
+					_ = db.InsertChatMessage(m.db, sess.ID, chatJID, senderJID, msgID, isFromMe, text, msgType, status, timestamp, rawBytes)
+				}
+				_ = db.UpsertChat(m.db, sess.ID, chatJID, name, unreadCount, lastMsgTime)
+				
+				// Auto-assign the chat to an agent if not yet assigned.
+				chats.AutoAssignNewChat(m.db, sess.ID, chatJID, func(ev chats.NewChatEvent) {
+					if m.hub != nil {
+						m.hub.Publish(ev.AgentID, "new_chat", map[string]interface{}{
+							"assignment_id": ev.AssignmentID,
+							"session_id":    ev.SessionID,
+							"jid":           ev.JID,
+						})
+					}
+				})
+			}
+			log.Info().Str("session", sess.ID).Msg("history sync processed")
+
 		case *events.Message:
 			payload := buildMessagePayload(sess.ID, v)
 			m.dispatcher.Dispatch(sess.ID, "message.received", payload)
 
-			// Skip messages sent by us
+			chatJID := v.Info.Chat.String()
+			msgID := v.Info.ID
+			senderJID := ""
+			if v.Info.Sender.IsEmpty() == false {
+				senderJID = v.Info.Sender.String()
+			}
+			
+			// Save in local chat_messages storage
+			text := v.Message.GetConversation()
+			if text == "" && v.Message.GetExtendedTextMessage() != nil {
+				text = v.Message.GetExtendedTextMessage().GetText()
+			}
+			msgType := "text"
+			if v.Message.GetImageMessage() != nil {
+				msgType = "image"
+			} else if v.Message.GetVideoMessage() != nil {
+				msgType = "video"
+			} else if v.Message.GetDocumentMessage() != nil {
+				msgType = "document"
+			} else if v.Message.GetAudioMessage() != nil {
+				msgType = "audio"
+			} else if v.Message.GetStickerMessage() != nil {
+				msgType = "sticker"
+			}
+			
+			status := ""
+			if v.Info.IsFromMe {
+				status = "SERVER_ACK"
+			}
+
+			rawBytes, _ := proto.Marshal(v.Message)
+			_ = db.InsertChatMessage(m.db, sess.ID, chatJID, senderJID, msgID, v.Info.IsFromMe, text, msgType, status, v.Info.Timestamp, rawBytes)
+			
+			// Also upsert chat
+			unreadInc := 1
+			if v.Info.IsFromMe {
+				unreadInc = 0
+			}
+			_ = db.UpsertChat(m.db, sess.ID, chatJID, v.Info.PushName, unreadInc, v.Info.Timestamp)
+
+			// Skip messages sent by us for auto assignment
 			if v.Info.IsFromMe {
 				break
 			}
 
-			chatJID := v.Info.Chat.String()
 
 			// Auto-assign the chat to an agent if not yet assigned.
 			// The notify callback pushes a "new_chat" SSE event to the assigned agent.
@@ -265,7 +379,7 @@ func (m *Manager) makeEventHandler(sess *Session) func(interface{}) {
 			}
 
 		case *events.Receipt:
-			handleReceipt(m.dispatcher, sess.ID, v)
+			m.handleReceipt(sess.ID, v)
 
 		case *events.GroupInfo:
 			m.dispatcher.Dispatch(sess.ID, "group.updated", map[string]interface{}{
@@ -320,21 +434,41 @@ func buildMessagePayload(sessionID string, v *events.Message) map[string]interfa
 	}
 }
 
-func handleReceipt(d *webhook.Dispatcher, sessionID string, v *events.Receipt) {
+func (m *Manager) handleReceipt(sessionID string, v *events.Receipt) {
 	event := ""
+	status := ""
 	switch v.Type {
 	case types.ReceiptTypeDelivered:
 		event = "message.delivered"
-	case types.ReceiptTypeRead:
+		status = "DELIVERY_ACK"
+	case types.ReceiptTypeRead, types.ReceiptTypeReadSelf:
 		event = "message.read"
+		status = "READ"
+	case types.ReceiptTypePlayed:
+		event = "message.played"
+		status = "PLAYED"
 	default:
 		return
 	}
-	d.Dispatch(sessionID, event, map[string]interface{}{
+
+	// Update DB for each message ID
+	for _, msgID := range v.MessageIDs {
+		_ = db.UpdateChatMessageStatus(m.db, sessionID, msgID, status)
+	}
+
+	// Broadcast via SSE and Webhooks
+	m.dispatcher.Dispatch(sessionID, event, map[string]interface{}{
 		"session":  sessionID,
 		"ids":      v.MessageIDs,
 		"from":     v.MessageSource.Sender.String(),
 		"chat":     v.MessageSource.Chat.String(),
 		"time":     v.Timestamp,
+	})
+
+	m.hub.PublishAll("message_status", map[string]interface{}{
+		"session": sessionID,
+		"chat":   v.MessageSource.Chat.String(),
+		"ids":    v.MessageIDs,
+		"status": status,
 	})
 }

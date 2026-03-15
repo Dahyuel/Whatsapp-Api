@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
-import { Search, LogOut, Phone, MoreVertical } from 'lucide-react';
+import { Search, LogOut, Phone, Users, MoreVertical } from 'lucide-react';
 import MessageThread from './MessageThread';
 import MessageInput from './MessageInput';
 import { toast } from 'react-hot-toast';
@@ -25,12 +25,40 @@ function formatTime(ts) {
   } catch { return ''; }
 }
 
+function ChatAvatar({ jid, session, isGroup }) {
+  const [url, setUrl] = useState(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    setUrl(null);
+    setError(false);
+    if (!jid || !session) return;
+    
+    let active = true;
+    fetchApi(`/agent/chats/${encodeURIComponent(jid)}/avatar?session=${session}`)
+      .then(res => {
+        if (active && res.url) setUrl(res.url);
+      })
+      .catch(() => {
+        if (active) setError(true);
+      });
+    return () => { active = false; };
+  }, [jid, session]);
+
+  if (url && !error) {
+    return <img src={url} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />;
+  }
+
+  return isGroup ? <Users size={16} /> : <Phone size={16} />;
+}
+
 export default function ChatUI() {
   const { user, logout } = useAuth();
   const [chats, setChats] = useState([]);
   const [selectedChat, setSelectedChat] = useState(null);
   const [search, setSearch] = useState('');
   const [lastMessages, setLastMessages] = useState({}); // jid → {text, time}
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const evtSourceRef = useRef(null);
 
   const fetchChats = useCallback(async () => {
@@ -73,6 +101,11 @@ export default function ChatUI() {
       }
     });
 
+    sse.addEventListener('message_status', (e) => {
+      // Refresh the active chat when read receipts arrive
+      setRefreshTrigger(prev => prev + 1);
+    });
+
     sse.onerror = () => {
       // Auto-reconnects
     };
@@ -83,9 +116,10 @@ export default function ChatUI() {
 
   useEffect(() => { fetchChats(); }, [fetchChats]);
 
-  const filtered = chats.filter(c =>
-    formatPhoneNumber(c.jid).includes(search)
-  );
+  const filtered = chats.filter(c => {
+    const text = (c.name || formatPhoneNumber(c.jid)).toLowerCase();
+    return text.includes(search.toLowerCase());
+  });
 
   return (
     <div className="agent-layout">
@@ -121,7 +155,8 @@ export default function ChatUI() {
             </div>
           )}
           {filtered.map(chat => {
-            const phone = formatPhoneNumber(chat.jid);
+            const isGroup = chat.jid?.includes('@g.us');
+            const displayName = chat.name || formatPhoneNumber(chat.jid);
             const last = lastMessages[chat.jid];
             const isActive = selectedChat?.jid === chat.jid;
             return (
@@ -131,11 +166,11 @@ export default function ChatUI() {
                 onClick={() => setSelectedChat(chat)}
               >
                 <div className="agent-chat-avatar">
-                  <Phone size={16} />
+                  <ChatAvatar jid={chat.jid} session={chat.session_id} isGroup={isGroup} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="flex justify-between">
-                    <span className="agent-chat-name">{phone}</span>
+                    <span className="agent-chat-name" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }} title={displayName}>{displayName}</span>
                     {last?.time && <span className="agent-chat-time">{formatTime(last.time)}</span>}
                   </div>
                   {last?.text && (
@@ -155,11 +190,11 @@ export default function ChatUI() {
             <div className="agent-chat-header">
               <div className="flex items-center gap-3">
                 <div className="agent-chat-avatar">
-                  <Phone size={18} />
+                  <ChatAvatar jid={selectedChat.jid} session={selectedChat.session_id} isGroup={selectedChat.jid?.includes('@g.us')} />
                 </div>
                 <div>
-                  <div style={{ fontWeight: 600 }}>{formatPhoneNumber(selectedChat.jid)}</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{selectedChat.session_id}</div>
+                  <div style={{ fontWeight: 600 }}>{selectedChat.name || formatPhoneNumber(selectedChat.jid)}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{selectedChat.session_id} • {selectedChat.jid}</div>
                 </div>
               </div>
               <MoreVertical size={20} style={{ color: 'var(--text-muted)' }} />
@@ -175,6 +210,8 @@ export default function ChatUI() {
                   [selectedChat.jid]: { text: msg.text, time: msg.time }
                 }));
               }}
+              lastNewMessage={lastMessages[selectedChat.jid]}
+              refreshTrigger={refreshTrigger}
             />
 
             <MessageInput

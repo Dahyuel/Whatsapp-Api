@@ -61,7 +61,7 @@ func main() {
 	hub := api.NewSSEHub()
 
 	// Session manager (restores persisted sessions)
-	mgr, err := session.NewManager(database, cfg, dispatcher)
+	mgr, err := session.NewManager(database, cfg, dispatcher, hub)
 	if err != nil {
 		log.Fatal().Err(err).Msg("init session manager")
 	}

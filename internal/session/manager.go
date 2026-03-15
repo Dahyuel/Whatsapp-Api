@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"whatsapp-api/internal/antiban"
+	"whatsapp-api/internal/chats"
 	"whatsapp-api/internal/config"
 	"whatsapp-api/internal/db"
 	"whatsapp-api/internal/fingerprint"
@@ -25,6 +26,13 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
+// SSEPublisher is a minimal interface so the session package does not
+// import the api package (avoiding a circular dependency).
+type SSEPublisher interface {
+	Publish(agentID string, eventType string, data interface{})
+	PublishAll(eventType string, data interface{})
+}
+
 // Manager manages all WhatsApp sessions.
 type Manager struct {
 	mu         sync.RWMutex
@@ -32,16 +40,18 @@ type Manager struct {
 	db         *sql.DB
 	cfg        *config.Config
 	dispatcher *webhook.Dispatcher
+	hub        SSEPublisher
 	dataDir    string
 }
 
 // NewManager creates a session manager and restores persisted sessions.
-func NewManager(database *sql.DB, cfg *config.Config, dispatcher *webhook.Dispatcher) (*Manager, error) {
+func NewManager(database *sql.DB, cfg *config.Config, dispatcher *webhook.Dispatcher, hub SSEPublisher) (*Manager, error) {
 	m := &Manager{
 		sessions:   make(map[string]*Session),
 		db:         database,
 		cfg:        cfg,
 		dispatcher: dispatcher,
+		hub:        hub,
 		dataDir:    filepath.Dir(cfg.DBDSN),
 	}
 	if err := m.restoreSessions(); err != nil {
@@ -222,7 +232,37 @@ func (m *Manager) makeEventHandler(sess *Session) func(interface{}) {
 			log.Warn().Str("session", sess.ID).Msg("session logged out")
 
 		case *events.Message:
-			m.dispatcher.Dispatch(sess.ID, "message.received", buildMessagePayload(sess.ID, v))
+			payload := buildMessagePayload(sess.ID, v)
+			m.dispatcher.Dispatch(sess.ID, "message.received", payload)
+
+			// Skip messages sent by us
+			if v.Info.IsFromMe {
+				break
+			}
+
+			chatJID := v.Info.Chat.String()
+
+			// Auto-assign the chat to an agent if not yet assigned.
+			// The notify callback pushes a "new_chat" SSE event to the assigned agent.
+			assignedAgentID := chats.AutoAssignNewChat(m.db, sess.ID, chatJID, func(ev chats.NewChatEvent) {
+				if m.hub != nil {
+					m.hub.Publish(ev.AgentID, "new_chat", map[string]interface{}{
+						"assignment_id": ev.AssignmentID,
+						"session_id":    ev.SessionID,
+						"jid":           ev.JID,
+					})
+				}
+			})
+
+			// If no agent was assigned at all, skip SSE
+			if assignedAgentID == "" {
+				break
+			}
+
+			// Push a "new_message" event so the assigned agent's chat updates in real time.
+			if m.hub != nil {
+				m.hub.Publish(assignedAgentID, "new_message", payload)
+			}
 
 		case *events.Receipt:
 			handleReceipt(m.dispatcher, sess.ID, v)

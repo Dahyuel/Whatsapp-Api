@@ -52,8 +52,8 @@ func (h *SSEHub) Unsubscribe(agentID string, ch chan SSEEvent) {
 	}
 }
 
-// Publish sends an event to all connections belonging to agentID.
-func (h *SSEHub) Publish(agentID string, ev SSEEvent) {
+// publish sends a typed SSEEvent to all connections belonging to agentID.
+func (h *SSEHub) publish(agentID string, ev SSEEvent) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for _, ch := range h.clients[agentID] {
@@ -64,8 +64,13 @@ func (h *SSEHub) Publish(agentID string, ev SSEEvent) {
 	}
 }
 
-// PublishAll sends an event to every connected agent.
-func (h *SSEHub) PublishAll(ev SSEEvent) {
+// Publish satisfies session.SSEPublisher: sends an event to agentID's connections.
+func (h *SSEHub) Publish(agentID string, eventType string, data interface{}) {
+	h.publish(agentID, SSEEvent{Type: eventType, AgentID: agentID, Data: data})
+}
+
+// publishAll sends a typed SSEEvent to every connected agent.
+func (h *SSEHub) publishAll(ev SSEEvent) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for _, chans := range h.clients {
@@ -76,6 +81,11 @@ func (h *SSEHub) PublishAll(ev SSEEvent) {
 			}
 		}
 	}
+}
+
+// PublishAll satisfies session.SSEPublisher: sends an event to every connected agent.
+func (h *SSEHub) PublishAll(eventType string, data interface{}) {
+	h.publishAll(SSEEvent{Type: eventType, Data: data})
 }
 
 // RegisterRealtimeRoutes registers GET /agent/events (SSE stream).

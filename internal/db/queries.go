@@ -139,3 +139,171 @@ func GetCooldown(ctx context.Context, db *sql.DB, sessionID, jid string) (count 
 		Scan(&count, &riskLevel, &lastSent)
 	return
 }
+
+// ── User management ────────────────────────────────────────────────────────
+
+// UserRow represents a row in the users table.
+type UserRow struct {
+	ID           string
+	Username     string
+	PasswordHash string
+	Role         string
+	CreatedAt    time.Time
+}
+
+// CreateUser inserts a new user.
+func CreateUser(db *sql.DB, id, username, passwordHash, role string) error {
+	_, err := db.Exec(`INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)`,
+		id, username, passwordHash, role)
+	return err
+}
+
+// GetUserByUsername returns a user by username.
+func GetUserByUsername(db *sql.DB, username string) (*UserRow, error) {
+	u := &UserRow{}
+	err := db.QueryRow(`SELECT id, username, password_hash, role, created_at FROM users WHERE username=?`, username).
+		Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+// GetUserByID returns a user by ID.
+func GetUserByID(db *sql.DB, id string) (*UserRow, error) {
+	u := &UserRow{}
+	err := db.QueryRow(`SELECT id, username, password_hash, role, created_at FROM users WHERE id=?`, id).
+		Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+// ListUsers returns all users.
+func ListUsers(db *sql.DB) ([]*UserRow, error) {
+	rows, err := db.Query(`SELECT id, username, password_hash, role, created_at FROM users ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var users []*UserRow
+	for rows.Next() {
+		u := &UserRow{}
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.CreatedAt); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, nil
+}
+
+// ListAgents returns all users with role='agent'.
+func ListAgents(db *sql.DB) ([]*UserRow, error) {
+	rows, err := db.Query(`SELECT id, username, password_hash, role, created_at FROM users WHERE role='agent' ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var users []*UserRow
+	for rows.Next() {
+		u := &UserRow{}
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.CreatedAt); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, nil
+}
+
+// DeleteUser deletes a user by ID.
+func DeleteUser(db *sql.DB, id string) error {
+	_, err := db.Exec(`DELETE FROM users WHERE id=?`, id)
+	return err
+}
+
+// CountUsers returns the total number of users matching role (empty string = all).
+func CountUsers(db *sql.DB, role string) (int, error) {
+	var count int
+	var err error
+	if role == "" {
+		err = db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&count)
+	} else {
+		err = db.QueryRow(`SELECT COUNT(*) FROM users WHERE role=?`, role).Scan(&count)
+	}
+	return count, err
+}
+
+// ── Agent chat assignment ──────────────────────────────────────────────────
+
+// AgentChatRow represents a row in the agent_chats table.
+type AgentChatRow struct {
+	ID         string
+	AgentID    string
+	SessionID  string
+	JID        string
+	AssignedAt time.Time
+}
+
+// AssignChatToAgent creates an assignment record.
+func AssignChatToAgent(db *sql.DB, id, agentID, sessionID, jid string) error {
+	_, err := db.Exec(`
+		INSERT INTO agent_chats (id, agent_id, session_id, jid)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(agent_id, session_id, jid) DO NOTHING`,
+		id, agentID, sessionID, jid)
+	return err
+}
+
+// UnassignChat removes an assignment by ID.
+func UnassignChat(db *sql.DB, id string) error {
+	_, err := db.Exec(`DELETE FROM agent_chats WHERE id=?`, id)
+	return err
+}
+
+// UnassignChatByJID removes assignment by agent+session+jid.
+func UnassignChatByJID(db *sql.DB, agentID, sessionID, jid string) error {
+	_, err := db.Exec(`DELETE FROM agent_chats WHERE agent_id=? AND session_id=? AND jid=?`, agentID, sessionID, jid)
+	return err
+}
+
+// GetChatsForAgent returns all chat assignments for an agent.
+func GetChatsForAgent(db *sql.DB, agentID string) ([]*AgentChatRow, error) {
+	rows, err := db.Query(`SELECT id, agent_id, session_id, jid, assigned_at FROM agent_chats WHERE agent_id=? ORDER BY assigned_at`, agentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var chats []*AgentChatRow
+	for rows.Next() {
+		ac := &AgentChatRow{}
+		if err := rows.Scan(&ac.ID, &ac.AgentID, &ac.SessionID, &ac.JID, &ac.AssignedAt); err != nil {
+			return nil, err
+		}
+		chats = append(chats, ac)
+	}
+	return chats, nil
+}
+
+// GetAgentForChat returns the agent assigned to a given session+jid, or nil if none.
+func GetAgentForChat(db *sql.DB, sessionID, jid string) (*AgentChatRow, error) {
+	ac := &AgentChatRow{}
+	err := db.QueryRow(`SELECT id, agent_id, session_id, jid, assigned_at FROM agent_chats WHERE session_id=? AND jid=?`, sessionID, jid).
+		Scan(&ac.ID, &ac.AgentID, &ac.SessionID, &ac.JID, &ac.AssignedAt)
+	if err != nil {
+		return nil, err
+	}
+	return ac, nil
+}
+
+// GetRandomAgent returns a random agent user, used for auto-assignment.
+func GetRandomAgent(db *sql.DB) (*UserRow, error) {
+	u := &UserRow{}
+	err := db.QueryRow(`SELECT id, username, password_hash, role, created_at FROM users WHERE role='agent' ORDER BY RANDOM() LIMIT 1`).
+		Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+

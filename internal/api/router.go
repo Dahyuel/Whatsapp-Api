@@ -17,7 +17,7 @@ import (
 )
 
 // NewRouter constructs and returns the fully wired Gin router.
-func NewRouter(cfg *config.Config, db *sql.DB, mgr *session.Manager, dispatcher *webhook.Dispatcher) *gin.Engine {
+func NewRouter(cfg *config.Config, database *sql.DB, mgr *session.Manager, dispatcher *webhook.Dispatcher, hub *SSEHub) *gin.Engine {
 	if cfg.Port != "" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -40,10 +40,11 @@ func NewRouter(cfg *config.Config, db *sql.DB, mgr *session.Manager, dispatcher 
 	lmt := limiter.New(store, rate)
 	r.Use(mgin.NewMiddleware(lmt))
 
-	// System routes (no auth)
+	// ── Public routes (no auth) ───────────────────────────────────────────
 	RegisterSystemRoutes(r)
+	RegisterAuthRoutes(r, database, cfg)
 
-	// Authenticated routes
+	// ── Existing API-key protected routes (backward-compatible) ──────────
 	var authed gin.IRouter
 	if cfg.JWTEnabled {
 		authed = r.Group("/", auth.JWTMiddleware(cfg.JWTSecret), auth.APIKeyMiddleware(cfg.APIKey))
@@ -59,6 +60,17 @@ func NewRouter(cfg *config.Config, db *sql.DB, mgr *session.Manager, dispatcher 
 	RegisterContactRoutes(authed, mgr)
 	RegisterWebhookRoutes(authed, mgr, dispatcher)
 	RegisterChannelRoutes(authed, mgr)
+
+	// ── User JWT protected routes ─────────────────────────────────────────
+	userAuthed := r.Group("/", auth.UserJWTMiddleware(cfg.UserJWTSecret))
+
+	// Admin-only sub-group
+	adminGroup := userAuthed.Group("/", auth.AdminOnlyMiddleware())
+	RegisterUserRoutes(adminGroup, database)
+
+	// Agent routes
+	RegisterAgentRoutes(userAuthed, mgr, database)
+	RegisterRealtimeRoutes(userAuthed, hub)
 
 	return r
 }

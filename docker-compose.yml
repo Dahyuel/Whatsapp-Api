@@ -27,6 +27,9 @@ services:
       - MEDIA_STORAGE_PATH=/app/data/media
       - JWT_ENABLED=${JWT_ENABLED:-false}
       - JWT_SECRET=${JWT_SECRET:-changeme-jwt-secret}
+      - USER_JWT_SECRET=${USER_JWT_SECRET:-changeme-user-jwt-secret-32chars}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
       interval: 30s

@@ -12,9 +12,16 @@ type Config struct {
 	Port   string
 	APIKey string
 
-	// JWT
+	// JWT (existing API-level, optional)
 	JWTEnabled bool
 	JWTSecret  string
+
+	// User-facing JWT (for admin/agent login UI)
+	UserJWTSecret string
+
+	// Admin seeding
+	AdminUsername string
+	AdminPassword string
 
 	// Database
 	DBDriver string // "sqlite" or "postgres"
@@ -44,6 +51,9 @@ func Load() *Config {
 		APIKey:                getEnv("API_KEY", "changeme"),
 		JWTEnabled:            getBool("JWT_ENABLED", false),
 		JWTSecret:             getEnv("JWT_SECRET", "changeme-jwt-secret"),
+		UserJWTSecret:         getEnv("USER_JWT_SECRET", "changeme-user-jwt-secret-32chars"),
+		AdminUsername:         getEnv("ADMIN_USERNAME", "admin"),
+		AdminPassword:         getEnv("ADMIN_PASSWORD", "admin123"),
 		DBDriver:              getEnv("DB_DRIVER", "sqlite"),
 		DBDSN:                 getEnv("DB_DSN", "/app/data/whatsapp.db"),
 		QueueBaseDelay:        getDuration("QUEUE_BASE_DELAY", 4*time.Second),

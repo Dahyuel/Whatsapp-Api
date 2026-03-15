@@ -1,6 +1,6 @@
 # WhatsApp API — WAHA-Level, Self-Hosted
 
-A production-ready WhatsApp API server built with **Go** and **WhatsMeow**. No browser automation — pure protocol-level communication. Multi-session, Docker-ready, with advanced anti-ban protection.
+A production-ready WhatsApp API server built with **Go** and **WhatsMeow**. No browser automation — pure protocol-level communication. Multi-session, Docker-ready, with advanced anti-ban protection, **role-based access control**, and a built-in **agent chat UI**.
 
 ---
 
@@ -21,10 +21,12 @@ A production-ready WhatsApp API server built with **Go** and **WhatsMeow**. No b
 | **Contacts** | List, check existence, block/unblock, profile photo, status |
 | **Chats** | List, history, mark read, mute, pin, archive |
 | **Channels** | List, get info, send message |
-| **Security** | API Key required, optional JWT, rate limiting (60 req/min) |
-| **Observability** | Structured logs (zerolog), Prometheus metrics at `/metrics` |
+| **Authentication** | Login-based (username + password → JWT), API Key for system routes, rate limiting (60 req/min) |
+| **Roles** | Admin (full control) and Agent (chat UI only — assigned chats) |
+| **Auto-Assignment** | New incoming chats are automatically assigned to a random available agent |
+| **Agent Chat UI** | WhatsApp-like interface — phone number display, message bubbles, text/voice/document send |
+| **Real-Time Sync** | Server-Sent Events (SSE) push new messages and new chats to agents instantly |
 | **Persistence** | SQLite (default), all sessions auto-reconnect on restart |
-| **GUI Dashboard** | Premium React + Vite frontend to manage sessions, webhooks, and test messaging |
 
 ---
 
@@ -34,7 +36,7 @@ A production-ready WhatsApp API server built with **Go** and **WhatsMeow**. No b
 
 ```bash
 cp .env.example .env
-# Edit .env and set API_KEY to a strong secret
+# Edit .env — set API_KEY, ADMIN_PASSWORD, USER_JWT_SECRET
 ```
 
 ### 2. Run with Docker Compose
@@ -43,35 +45,113 @@ cp .env.example .env
 docker compose up -d
 ```
 
-The server starts on **port 3000**. Data is persisted in the `whatsapp_data` Docker volume.
+The API starts on **port 3000**. The frontend starts on **port 5173**. Data is persisted in the `whatsapp_data` Docker volume.
 
 Verify it's running:
 ```bash
 curl http://localhost:3000/health
 ```
 
-### 3. Run the GUI Dashboard (Optional)
+### 3. Open the Dashboard
 
-Since the frontend is now bundled in `docker-compose.yml`, it will automatically start alongside the backend when you run `docker compose up -d`.
+Go to **http://localhost:5173** and log in with your admin credentials (default: `admin` / `admin123` — change in `.env`).
 
-The GUI will start on `http://localhost:5173`.
-Open it in your browser, enter your `API_KEY` (as configured in `.env`), and you can:
+---
 
-- **Manage Sessions:** Generate QR codes, connect devices, and disconnect.
-- **Messaging:** Send text and media using the built-in anti-ban queue.
-- **Webhooks:** Register and monitor webhook endpoints.
-- **API Tester:** Dispatch custom JSON payloads to any server endpoint.
+## Roles
+
+### Admin
+Logs into the full dashboard. Can:
+- Manage WhatsApp sessions (connect, disconnect, QR code scan)
+- Send messages, manage webhooks, test the API
+- **Create/delete users** (admin or agent role)
+- **Assign chats** from any session to any agent
+- View all configuration settings
+
+### Agent
+Logs into a **WhatsApp-like chat UI**. Can:
+- See only their assigned chats (phone numbers shown, not names)
+- Read message history per chat
+- Send text messages (Enter to send)
+- Record and send voice notes (MediaRecorder API)
+- Attach and send files (images, videos, documents — auto-detected)
+- Receive new messages and new chat assignments in **real-time** via SSE
+
+### Auto-Assignment
+When a new incoming chat arrives that has no agent assigned, the system automatically picks a random agent from the agent pool and assigns it. The agent is notified instantly via SSE.
+
+---
+
+## Environment Variables
+
+### Required
+
+| Variable | Default | Description |
+|---|---|---|
+| `API_KEY` | `changeme` | API key for system/admin routes |
+| `ADMIN_USERNAME` | `admin` | Initial admin account username |
+| `ADMIN_PASSWORD` | `admin123` | Initial admin account password |
+| `USER_JWT_SECRET` | `changeme-user-jwt-secret-32chars` | Secret for signing user login JWTs |
+
+> [!IMPORTANT]
+> Change `ADMIN_PASSWORD` and `USER_JWT_SECRET` before deploying. The admin account is only seeded once on first run.
+
+### Optional
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `3000` | Server port |
+| `DB_DRIVER` | `sqlite3` | Database driver |
+| `DB_DSN` | `/app/data/whatsapp.db` | Database path |
+| `JWT_ENABLED` | `false` | Enable JWT for legacy API-key routes |
+| `JWT_SECRET` | `changeme-jwt-secret` | Secret for legacy JWT |
+| `MEDIA_STORAGE_PATH` | `/app/data/media` | Media file storage path |
+
+### Anti-Ban Tuning
+
+| Variable | Default | Description |
+|---|---|---|
+| `QUEUE_BASE_DELAY` | `4s` | Base delay between messages |
+| `QUEUE_JITTER_MIN` | `1s` | Minimum extra jitter |
+| `QUEUE_JITTER_MAX` | `3s` | Maximum extra jitter |
+| `MAX_MESSAGES_PER_MINUTE` | `20` | Rate cap per session |
+| `TYPING_ENABLED` | `true` | Send composing presence before messages |
+| `TYPING_CHARS_PER_SECOND` | `12` | Typing speed (affects delay length) |
+| `PRESENCE_ENABLED` | `true` | Presence state simulation |
 
 ---
 
 ## API Reference
 
-All endpoints require the header:
-```
-X-API-Key: your-api-key
+### Authentication (Login)
+
+User-facing login — no API key required.
+
+```bash
+POST /auth/login
+{ "username": "admin", "password": "admin123" }
+# Returns: { "token": "<jwt>", "role": "admin", "user_id": "...", "username": "admin" }
 ```
 
-### Sessions
+Use the returned `token` as a `Bearer` token on all admin/agent endpoints:
+```
+Authorization: Bearer <token>
+```
+
+---
+
+### System Routes
+
+These use the `X-API-Key` header (the existing API key).
+
+```bash
+GET /health      # { "status": "ok" }
+GET /metrics     # Prometheus metrics
+```
+
+---
+
+### Sessions (Admin — API Key)
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -82,9 +162,8 @@ X-API-Key: your-api-key
 | POST | `/sessions/{id}/logout` | Logout session |
 | DELETE | `/sessions/{id}` | Delete session |
 
-**Create and link a session:**
 ```bash
-# Create
+# Create and link a session
 curl -X POST http://localhost:3000/sessions \
   -H "X-API-Key: your-key" \
   -H "Content-Type: application/json" \
@@ -99,7 +178,7 @@ curl -X POST http://localhost:3000/sessions/session1/login \
 
 ---
 
-### Messaging
+### Messaging (Admin / API Key)
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -111,96 +190,62 @@ curl -X POST http://localhost:3000/sessions/session1/login \
 | POST | `/messages/poll` | Send poll |
 | DELETE | `/messages` | Delete/revoke message |
 | PATCH | `/messages` | Edit sent message |
-| GET | `/messages/{tracking_id}/status` | Check message delivery status |
+| GET | `/messages/{tracking_id}/status` | Check delivery status |
 
-**Send a text message (queued with anti-ban delays):**
 ```bash
 curl -X POST http://localhost:3000/messages/text \
   -H "X-API-Key: your-key" \
   -H "Content-Type: application/json" \
-  -d '{
-    "session": "session1",
-    "to": "15551234567@s.whatsapp.net",
-    "text": "Hello from WhatsApp API!"
-  }'
+  -d '{"session":"session1","to":"15551234567@s.whatsapp.net","text":"Hello!"}'
 # Returns: { "tracking_id": "uuid", "status": "queued" }
 ```
 
-**Send an image from URL:**
+---
+
+### User Management (Admin — JWT)
+
+All routes require `Authorization: Bearer <admin-token>`.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/admin/users` | List all users |
+| POST | `/admin/users` | Create user `{username, password, role}` |
+| DELETE | `/admin/users/:id` | Delete user |
+| POST | `/admin/users/:id/chats` | Assign chats to agent `{session_id, jids:[...]}` |
+| GET | `/admin/users/:id/chats` | List assigned chats |
+| DELETE | `/admin/users/:id/chats/:chatid` | Remove a chat assignment |
+
 ```bash
-curl -X POST http://localhost:3000/messages/media \
-  -H "X-API-Key: your-key" \
+# Create an agent
+curl -X POST http://localhost:3000/admin/users \
+  -H "Authorization: Bearer <admin-token>" \
   -H "Content-Type: application/json" \
-  -d '{
-    "session": "session1",
-    "to": "15551234567@s.whatsapp.net",
-    "media_type": "image",
-    "url": "https://example.com/photo.jpg",
-    "caption": "Check this out!"
-  }'
-```
+  -d '{"username":"agent1","password":"pass123","role":"agent"}'
 
-**Send media via multipart upload:**
-```bash
-curl -X POST http://localhost:3000/messages/media \
-  -H "X-API-Key: your-key" \
-  -F "session=session1" \
-  -F "to=15551234567@s.whatsapp.net" \
-  -F "media_type=image" \
-  -F "caption=Hello" \
-  -F "file=@/path/to/image.jpg"
+# Assign chats to that agent
+curl -X POST http://localhost:3000/admin/users/<agent-id>/chats \
+  -H "Authorization: Bearer <admin-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"session1","jids":["15551234567@s.whatsapp.net"]}'
 ```
 
 ---
 
-### Queue
+### Agent Routes (Agent — JWT)
 
-```bash
-# All session queues
-GET /queue?api_key=your-key
+All routes require `Authorization: Bearer <agent-token>`. Agents can only access their own assigned chats.
 
-# Specific session
-GET /queue/session1?api_key=your-key
-# Returns: { "session_id": "session1", "pending": 3, "workers": 1 }
-```
-
----
-
-### Groups
-
-```bash
-# Create group
-POST /groups
-{ "session": "session1", "name": "My Group", "participants": ["15551234567@s.whatsapp.net"] }
-
-# Add/remove/promote/demote
-POST /groups/{jid}/participants
-{ "session": "session1", "action": "add", "participants": ["..."] }
-
-# Leave group
-DELETE /groups/{jid}/leave?session=session1
-```
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/agent/chats` | List assigned chats |
+| GET | `/agent/chats/:jid/messages?session=` | Get message history |
+| POST | `/agent/chats/:jid/send/text` | Send text `{session_id, text}` |
+| POST | `/agent/chats/:jid/send/media` | Send file (multipart: session_id, media_type, file) |
+| GET | `/agent/events?token=` | SSE stream — real-time events (`new_chat`, `new_message`) |
 
 ---
 
-### Contacts
-
-```bash
-# Check if numbers are on WhatsApp
-POST /contacts/exists?session=session1
-{ "phones": ["+15551234567", "+15557654321"] }
-
-# Block/unblock
-POST /contacts/{jid}/block?session=session1
-POST /contacts/{jid}/unblock?session=session1
-
-# Profile photo
-GET /contacts/{jid}/photo?session=session1
-```
-
----
-
-### Webhooks
+### Webhooks (Admin — API Key)
 
 ```bash
 # Register a webhook
@@ -211,65 +256,67 @@ curl -X POST http://localhost:3000/webhooks \
     "session_id": "session1",
     "url": "https://your-server.com/webhook",
     "secret": "your-hmac-secret",
-    "events": ["message.received", "session.connected", "message.delivered"]
+    "events": ["message.received", "session.connected"]
   }'
 
 # Delete a webhook
 DELETE /webhooks/{id}
 ```
 
-**Incoming webhook payload:**
-```json
-{
-  "event": "message.received",
-  "session": "session1",
-  "ts": 1710000000,
-  "data": {
-    "id": "msg-id",
-    "from": "15551234567@s.whatsapp.net",
-    "chat": "15551234567@s.whatsapp.net",
-    "timestamp": "2024-03-10T12:00:00Z",
-    "is_from_me": false,
-    "type": "text"
-  }
-}
-```
+Webhooks include an `X-WhatsApp-Signature: sha256=<hmac>` header for validation.
 
-Webhooks include the `X-WhatsApp-Signature: sha256=<hmac>` header for validation.
-
-**Supported events:**
-- `message.received`, `message.sent`, `message.delivered`, `message.read`
-- `message.reaction`, `session.connected`, `session.disconnected`
-- `media.received`, `group.updated`
+**Supported events:** `message.received`, `message.sent`, `message.delivered`, `message.read`, `message.reaction`, `session.connected`, `session.disconnected`, `media.received`, `group.updated`
 
 ---
 
-### System
+## Directory Structure
 
-```bash
-GET /health      # { "status": "ok", "version": "1.0.0" }
-GET /metrics     # Prometheus metrics
 ```
-
----
-
-## Anti-Ban Configuration
-
-Tune these environment variables to balance speed vs. safety:
-
-| Variable | Default | Description |
-|---|---|---|
-| `QUEUE_BASE_DELAY` | `4s` | Base delay between messages |
-| `QUEUE_JITTER_MIN` | `1s` | Minimum extra jitter added |
-| `QUEUE_JITTER_MAX` | `3s` | Maximum extra jitter added |
-| `MAX_MESSAGES_PER_MINUTE` | `20` | Rate cap per session |
-| `TYPING_ENABLED` | `true` | Send composing presence before messages |
-| `TYPING_CHARS_PER_SECOND` | `12` | Typing speed (affects delay length) |
-| `PRESENCE_ENABLED` | `true` | Presence state simulation |
-
-**New contact behavior:** contacts with 0 prior messages get an extra 6s delay + slow queue lane automatically.
-
-**Auto-slowdown:** when send errors occur, the base delay is increased by 1s per error to back off.
+whatsapp-api/
+├── cmd/server/main.go              # Entry point (seeds admin account)
+├── internal/
+│   ├── config/config.go            # Configuration loader
+│   ├── db/                         # SQLite schema + queries (users, agent_chats, sessions…)
+│   ├── fingerprint/                # Device & network randomization
+│   ├── antiban/                    # Jitter, typing, presence, adaptive timing
+│   ├── queue/                      # Per-session FIFO queue + contextual queue
+│   ├── session/                    # WhatsMeow multi-session manager
+│   ├── webhook/                    # Dispatcher with HMAC + retry
+│   ├── messaging/                  # Message builders (text/media/special)
+│   ├── groups/                     # Group operations
+│   ├── contacts/                   # Contact operations
+│   ├── channels/                   # Channel (newsletter) operations
+│   ├── chats/                      # Chat management + auto-assignment logic
+│   ├── auth/                       # API key, JWT (system + user), bcrypt, middleware
+│   └── api/                        # Gin router + all HTTP handlers + SSE hub
+├── Dockerfile
+├── docker-compose.yml
+├── .env
+└── frontend/                       # React + Vite frontend
+    ├── src/
+    │   ├── api.js                  # Centralized API fetcher (API key + JWT)
+    │   ├── App.jsx                 # Role-based routing (Login → Admin or Agent)
+    │   ├── index.css               # Premium vanilla CSS styling
+    │   ├── context/
+    │   │   └── AuthContext.jsx     # Auth state (login, logout, JWT storage)
+    │   └── components/
+    │       ├── Login.jsx           # Login page (glassmorphism)
+    │       ├── Dashboard.jsx       # Admin overview
+    │       ├── SessionsManager.jsx # Session management UI
+    │       ├── Messaging.jsx       # Messaging test UI
+    │       ├── WebhooksManager.jsx # Webhooks management UI
+    │       ├── ApiTester.jsx       # Raw API request tester
+    │       ├── ApiSettings.jsx     # API key settings
+    │       ├── admin/
+    │       │   ├── UserManagement.jsx   # Create/delete admin & agent users
+    │       │   └── ChatAssignment.jsx   # Assign chats to agents
+    │       └── agent/
+    │           ├── ChatUI.jsx           # WhatsApp-like agent interface
+    │           ├── MessageThread.jsx    # Message bubbles (in/out)
+    │           └── MessageInput.jsx     # Text / voice / file send bar
+    ├── package.json
+    └── vite.config.js
+```
 
 ---
 
@@ -283,16 +330,13 @@ const app = express();
 app.use(express.json());
 
 app.post("/webhook", (req, res) => {
-  // Validate HMAC signature
   const sig = req.headers["x-whatsapp-signature"];
   const expected = "sha256=" + crypto
     .createHmac("sha256", "your-hmac-secret")
     .update(JSON.stringify(req.body))
     .digest("hex");
 
-  if (sig !== expected) {
-    return res.status(401).send("Invalid signature");
-  }
+  if (sig !== expected) return res.status(401).send("Invalid signature");
 
   const { event, session, data } = req.body;
   console.log(`[${session}] ${event}:`, data);
@@ -300,41 +344,6 @@ app.post("/webhook", (req, res) => {
 });
 
 app.listen(4000, () => console.log("Webhook receiver on :4000"));
-```
-
----
-
-## Directory Structure
-
-```
-whatsapp-api/
-├── cmd/server/main.go              # Entry point
-├── internal/
-│   ├── config/config.go            # Configuration loader
-│   ├── db/                         # SQLite schema + queries
-│   ├── fingerprint/                # Device & network randomization
-│   ├── antiban/                    # Jitter, typing, presence, adaptive timing
-│   ├── queue/                      # Per-session FIFO queue + contextual queue
-│   ├── session/                    # WhatsMeow multi-session manager
-│   ├── webhook/                    # Dispatcher with HMAC + retry
-│   ├── messaging/                  # Message builders (text/media/special)
-│   ├── groups/                     # Group operations
-│   ├── contacts/                   # Contact operations
-│   ├── channels/                   # Channel (newsletter) operations
-│   ├── chats/                      # Chat management
-│   ├── auth/                       # API key + JWT middleware
-│   └── api/                        # Gin router + all HTTP handlers
-├── Dockerfile
-├── docker-compose.yml
-├── .env.example
-└── frontend/                   # Modern React + Vite Dashboard
-    ├── src/
-    │   ├── api.js              # Centralized API fetcher
-    │   ├── App.jsx             # Main layout and routing
-    │   ├── index.css           # Premium vanilla CSS styling
-    │   └── components/         # GUI Components (Sessions, Messaging, Webhooks, Tester)
-    ├── package.json
-    └── vite.config.js
 ```
 
 ---

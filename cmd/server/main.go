@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"whatsapp-api/internal/api"
+	"whatsapp-api/internal/auth"
 	"whatsapp-api/internal/config"
 	"whatsapp-api/internal/db"
 	"whatsapp-api/internal/session"
@@ -47,8 +48,17 @@ func main() {
 	}
 	defer database.Close()
 
+	// Seed initial admin user (no-op if an admin already exists)
+	if err := auth.SeedAdminUser(database, cfg.AdminUsername, cfg.AdminPassword); err != nil {
+		log.Fatal().Err(err).Msg("seed admin user")
+	}
+	log.Info().Str("username", cfg.AdminUsername).Msg("admin account ready")
+
 	// Webhook dispatcher
 	dispatcher := webhook.NewDispatcher(database, cfg.WebhookTimeout, cfg.WebhookMaxRetries)
+
+	// SSE hub for real-time agent notifications
+	hub := api.NewSSEHub()
 
 	// Session manager (restores persisted sessions)
 	mgr, err := session.NewManager(database, cfg, dispatcher)
@@ -57,7 +67,7 @@ func main() {
 	}
 
 	// HTTP Router
-	router := api.NewRouter(cfg, database, mgr, dispatcher)
+	router := api.NewRouter(cfg, database, mgr, dispatcher, hub)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.Port),
@@ -88,7 +98,5 @@ func main() {
 		}
 	}
 
-	ctx := &http.Request{}
-	_ = ctx
 	log.Info().Msg("server stopped")
 }

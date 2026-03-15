@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 
 // Central API handler
-// The user can configure the local base URL if needed, but defaults to same host / backend port
 const API_BASE = 'http://localhost:3000';
 
 export class ApiError extends Error {
@@ -11,14 +10,19 @@ export class ApiError extends Error {
   }
 }
 
-export const fetchApi = async (endpoint, options = {}) => {
+function getHeaders(extra = {}) {
+  const stored = JSON.parse(localStorage.getItem('wapi_user') || 'null');
   const apiKey = localStorage.getItem('whatsapp_api_key') || '';
-  
-  const headers = {
+  return {
     'Content-Type': 'application/json',
     ...(apiKey ? { 'X-API-Key': apiKey } : {}),
-    ...options.headers,
+    ...(stored?.token ? { 'Authorization': `Bearer ${stored.token}` } : {}),
+    ...extra,
   };
+}
+
+export const fetchApi = async (endpoint, options = {}) => {
+  const headers = getHeaders(options.headers);
 
   // If we are sending FormData, remove Content-Type so browser can set it with boundary
   if (options.body instanceof FormData) {
